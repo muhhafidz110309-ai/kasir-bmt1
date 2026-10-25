@@ -36,9 +36,7 @@ $menu = [
       </div>
       <div class="brand-text">
         <strong>Asvie Mart</strong>
-      <marquee>
-                <span class="brand-sub">Baitul Maal wat Tamwil</span>
-      </marquee>
+          <span class="brand-sub">Baitul Maal wat Tamwil</span>
       </div>
     </div>
 
@@ -77,7 +75,16 @@ $menu = [
         <p class="subtitle"><?= isset($pageSubtitle) ? e($pageSubtitle) : 'Sistem Informasi Kasir BMT' ?></p>
       </div>
       <div class="topbar-right">
-        <span class="badge-date"><?= tanggalIndo(date('Y-m-d H:i:s')) ?></span>
+        <!-- ============================================ -->
+        <!-- LIVE CLOCK (JAM BERJALAN REAL-TIME)          -->
+        <!-- ============================================ -->
+        <span class="badge-date" id="liveClock">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+          </svg>
+          <span id="liveClockText"><?= tanggalIndo(date('Y-m-d H:i:s')) ?></span>
+        </span>
       </div>
     </header>
 
@@ -94,6 +101,9 @@ $menu = [
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
 <script>
+/* ============================================================
+   1. TOGGLE SIDEBAR (MOBILE)
+   ============================================================ */
 (function () {
   const toggle  = document.getElementById('sidebarToggle');
   const sidebar = document.getElementById('sidebar');
@@ -125,5 +135,30 @@ $menu = [
     if (e.key === 'Escape') closeSidebar();
   });
 })();
+
+/* ============================================================
+   2. LIVE CLOCK (JAM BERJALAN TIAP DETIK)
+   ============================================================ */
+(function () {
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const el    = document.getElementById('liveClockText');
+  if (!el) return;
+
+  function updateClock() {
+    const now = new Date();
+    const d   = String(now.getDate()).padStart(2, '0');
+    const b   = bulan[now.getMonth()];
+    const y   = now.getFullYear();
+    const hh  = String(now.getHours()).padStart(2, '0');
+    const mm  = String(now.getMinutes()).padStart(2, '0');
+    const ss  = String(now.getSeconds()).padStart(2, '0');
+
+    el.textContent = `${d} ${b} ${y} ${hh}:${mm}:${ss}`;
+  }
+
+  updateClock();                    // tampilkan langsung
+  setInterval(updateClock, 1000);   // update tiap 1 detik
+})();
 </script>
-    </body> 
+</body>
+</html>
