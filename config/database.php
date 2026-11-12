@@ -2,7 +2,7 @@
 session_start();
 
 $DB_HOST = 'localhost';
-$DB_NAME = 'kasir_bmt';
+$DB_NAME = 'kasir_bmt1';
 $DB_USER = 'root';
 $DB_PASS = '';
 

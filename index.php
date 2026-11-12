@@ -5,27 +5,46 @@ requireLogin();
 $pageTitle = 'Dashboard';
 $pageSubtitle = 'Ringkasan aktivitas BMT hari ini';
 
-$totalProduk = (int)$pdo->query("SELECT COUNT(*) FROM produk")->fetchColumn();
-$stokKritis  = (int)$pdo->query("SELECT COUNT(*) FROM produk WHERE stok <= 10")->fetchColumn();
+/* ============================================================
+   QUERY — dirapihkan, tanpa duplikasi
+   ============================================================ */
+$totalProduk    = (int)$pdo->query("SELECT COUNT(*) FROM produk")->fetchColumn();
+$stokKritis     = (int)$pdo->query("SELECT COUNT(*) FROM produk WHERE stok <= 10")->fetchColumn();
+$totalNilaiStok = (float)$pdo->query("SELECT COALESCE(SUM(harga_jual * stok),0) FROM produk")->fetchColumn();
 
-$trxHariIni = $pdo->query("SELECT COUNT(*) AS jml, COALESCE(SUM(total),0) AS nominal
-                           FROM transaksi
-                           WHERE jenis='penjualan' AND DATE(tanggal)=CURDATE()")->fetch();
+$trxHariIni = $pdo->query("
+    SELECT COUNT(*) AS jml, COALESCE(SUM(total),0) AS nominal
+    FROM transaksi
+    WHERE jenis='penjualan' AND DATE(tanggal)=CURDATE()
+")->fetch();
 
-$trxTerbaru = $pdo->query("SELECT t.*, u.nama AS kasir
-                           FROM transaksi t
-                           LEFT JOIN users u ON u.id = t.user_id
-                           WHERE t.jenis='penjualan'
-                           ORDER BY t.id DESC LIMIT 6")->fetchAll();
+$pendapatan = (float)$trxHariIni['nominal'];
 
-$produkLaris = $pdo->query("SELECT p.nama, SUM(d.qty) AS terjual, SUM(d.subtotal) AS omzet
-                            FROM transaksi_detail d
-                            JOIN produk p ON p.id = d.produk_id
-                            JOIN transaksi t ON t.id = d.transaksi_id
-                            WHERE t.jenis='penjualan'
-                            GROUP BY p.id ORDER BY terjual DESC LIMIT 5")->fetchAll();
+$beban = (float)$pdo->query("
+    SELECT COALESCE(SUM(nominal),0) FROM pengeluaran
+    WHERE DATE(tanggal) = CURDATE()
+")->fetchColumn();
 
-/* ====== QUERY: Penjualan 7 Hari Terakhir untuk Grafik ====== */
+$labaRugi = $pendapatan - $beban;
+$isLaba   = $labaRugi >= 0;
+
+$trxTerbaru = $pdo->query("
+    SELECT t.*, u.nama AS kasir
+    FROM transaksi t
+    LEFT JOIN users u ON u.id = t.user_id
+    WHERE t.jenis='penjualan'
+    ORDER BY t.id DESC LIMIT 6
+")->fetchAll();
+
+$produkLaris = $pdo->query("
+    SELECT p.nama, SUM(d.qty) AS terjual, SUM(d.subtotal) AS omzet
+    FROM transaksi_detail d
+    JOIN produk p ON p.id = d.produk_id
+    JOIN transaksi t ON t.id = d.transaksi_id
+    WHERE t.jenis='penjualan'
+    GROUP BY p.id ORDER BY terjual DESC LIMIT 5
+")->fetchAll();
+
 $penjualan7Hari = $pdo->query("
     SELECT DATE(tanggal) AS tgl, COALESCE(SUM(total),0) AS nominal
     FROM transaksi
@@ -43,10 +62,6 @@ for ($i = 6; $i >= 0; $i--) {
     $chartData[]   = (float)($penjualan7Hari[$tgl] ?? 0);
 }
 
-/* ====== QUERY: Total nilai stok produk ====== */
-$totalNilaiStok = (float)$pdo->query("SELECT COALESCE(SUM(harga_jual * stok),0) FROM produk")->fetchColumn();
-
-/* ====== QUERY: Pengeluaran 30 hari terakhir per kategori ====== */
 $pengeluaranKategori = $pdo->query("
     SELECT kategori, SUM(nominal) AS total
     FROM pengeluaran
@@ -55,74 +70,52 @@ $pengeluaranKategori = $pdo->query("
     ORDER BY total DESC
 ")->fetchAll();
 
-$outLabels = [];
-$outData   = [];
-foreach ($pengeluaranKategori as $p) {
-    $outLabels[] = $p['kategori'];
-    $outData[]   = (float)$p['total'];
-}
+$pengeluaranLabels = array_column($pengeluaranKategori, 'kategori');
+$pengeluaranData   = array_map(fn($p) => (float)$p['total'], $pengeluaranKategori);
 
-/* ====== QUERY: Total pengeluaran hari ini ====== */
-$outHariIni = (float)$pdo->query("
-    SELECT COALESCE(SUM(nominal),0) FROM pengeluaran
-    WHERE DATE(tanggal) = CURDATE()
-")->fetchColumn();
-
-$today = date('Y-m-d');
-
-// Pendapatan HANYA dari penjualan
-$pendapatan = (float)$pdo->query("
-    SELECT COALESCE(SUM(total),0)
-    FROM transaksi
-    WHERE DATE(tanggal) = CURDATE()
-      AND jenis = 'penjualan'
-")->fetchColumn();
-
-// Beban (kolom 'nominal')
-$beban = (float)$pdo->query("
-    SELECT COALESCE(SUM(nominal),0)
-    FROM pengeluaran
-    WHERE DATE(tanggal) = CURDATE()
-")->fetchColumn();
-
-// Laba / Rugi
-$labaRugi = $pendapatan - $beban;
-$isLaba   = $labaRugi >= 0;
-
-// ============================================
-// HUTANG (READ-ONLY di dashboard) — dikelompokkan per konsumen
-// Pakai kolom 'sisa' untuk total hutang
-// ============================================
 $hutangGroup = $pdo->query("
     SELECT nama,
-           COUNT(*)           AS jml_item,
-           SUM(qty)           AS total_qty,
-           SUM(harga * qty)   AS total_belanja,
-           SUM(dibayar)       AS total_dibayar,
-           SUM(sisa)          AS total_sisa,
-           MIN(tanggal)       AS tgl_awal,
-           MAX(tanggal)       AS tgl_akhir
+           COUNT(*)         AS jml_item,
+           SUM(qty)         AS total_qty,
+           SUM(harga * qty) AS total_belanja,
+           SUM(dibayar)     AS total_dibayar,
+           SUM(sisa)        AS total_sisa,
+           MIN(tanggal)     AS tgl_awal,
+           MAX(tanggal)     AS tgl_akhir
     FROM hutang
     GROUP BY nama
-    ORDER BY 
+    ORDER BY
       CASE WHEN SUM(sisa) > 0 THEN 0 ELSE 1 END,
       MAX(tanggal) DESC,
       nama ASC
 ")->fetchAll();
 
-$totalHutang       = 0;
-$totalSudahDibayar = 0;
-$jmlBelumLunas     = 0;
-foreach ($hutangGroup as $h) {
-    $totalHutang       += (float)$h['total_sisa'];
-    $totalSudahDibayar += (float)$h['total_dibayar'];
-    if ((float)$h['total_sisa'] > 0) $jmlBelumLunas++;
+$totalHutang = array_sum(array_map(fn($h) => (float)$h['total_sisa'], $hutangGroup));
+
+$detailByKonsumen = [];
+if ($hutangGroup) {
+    $namaList     = array_column($hutangGroup, 'nama');
+    $placeholders = implode(',', array_fill(0, count($namaList), '?'));
+
+    $stmt = $pdo->prepare("
+        SELECT h.*, p.nama AS nama_produk, p.kode AS kode_produk, p.satuan
+        FROM hutang h
+        JOIN produk p ON p.id = h.produk_id
+        WHERE h.nama IN ($placeholders)
+        ORDER BY h.nama ASC, h.sisa > 0 DESC, h.id DESC
+    ");
+    $stmt->execute($namaList);
+
+    foreach ($stmt->fetchAll() as $row) {
+        $detailByKonsumen[$row['nama']][] = $row;
+    }
 }
 
 require_once 'includes/header.php';
 ?>
 
-<div class="stats">
+<!-- ================= STAT CARDS ================= -->
+<div class="dashboard-stats">
   <div class="stat">
     <div class="stat-label">Penjualan Hari Ini</div>
     <div class="stat-value"><?= rupiah($trxHariIni['nominal']) ?></div>
@@ -148,22 +141,25 @@ require_once 'includes/header.php';
 <!-- ================= GRAFIK ================= -->
 <div class="grid-2">
   <div class="card">
-    <div class="card-head"><h2>Tren Penjualan 7 Hari Terakhir</h2></div>
-    <div class="card-body">
-      <canvas id="chartPenjualan" height="120"></canvas>
+    <div class="card-head">
+      <h2>📈 Tren Penjualan 7 Hari Terakhir</h2>
+    </div>
+    <div class="card-body chart-box">
+      <canvas id="chartPenjualan"></canvas>
     </div>
   </div>
 
   <div class="card">
-    <div class="card-head"><h2>Komposisi Pengeluaran (30 Hari Terakhir)</h2></div>
-    <div class="card-body" style="height:340px">
-      <canvas id="chartSimpanan"></canvas>
+    <div class="card-head">
+      <h2>🥧 Komposisi Pengeluaran (30 Hari)</h2>
+    </div>
+    <div class="card-body chart-box">
+      <canvas id="chartPengeluaran"></canvas>
     </div>
   </div>
 </div>
-<!-- =============== END GRAFIK =============== -->
 
-<!-- ===== CARD LABA RUGI ===== -->
+<!-- ================= LABA RUGI ================= -->
 <div class="card">
   <div class="card-head">
     <h2>💰 Laba / Rugi Hari Ini</h2>
@@ -172,7 +168,7 @@ require_once 'includes/header.php';
     </span>
   </div>
   <div class="card-body">
-    <table>
+    <table class="laba-rugi-table">
       <tbody>
         <tr>
           <td>Pendapatan Penjualan</td>
@@ -182,10 +178,10 @@ require_once 'includes/header.php';
           <td>Beban Operasional</td>
           <td class="text-right text-danger strong">− <?= rupiah($beban) ?></td>
         </tr>
-        <tr style="border-top:2px solid var(--border); background:var(--g25);">
+        <tr class="summary-row">
           <td><strong>Laba / Rugi Bersih</strong></td>
           <td class="text-right strong"
-              style="color: <?= $isLaba ? 'var(--g700)' : 'var(--danger)' ?>;">
+              style="color: <?= $isLaba ? 'var(--g700, #047857)' : 'var(--danger, #dc2626)' ?>;">
             <?= rupiah($labaRugi) ?>
           </td>
         </tr>
@@ -194,7 +190,7 @@ require_once 'includes/header.php';
   </div>
 </div>
 
-<!-- ===== CARD HUTANG (READ-ONLY, grouped per konsumen + status) ===== -->
+<!-- ================= HUTANG ================= -->
 <div class="card">
   <div class="card-head">
     <h2>📝 Daftar Hutang</h2>
@@ -205,32 +201,46 @@ require_once 'includes/header.php';
   <div class="card-body">
     <p class="text-muted" style="margin-bottom:14px; font-size:13px;">
       ℹ️ Hutang baru dicatat melalui halaman <a href="kasir.php"><strong>Kasir</strong></a> saat uang bayar kurang.
-      Pelunasan &amp; detail lengkap di halaman <a href="hutang.php"><strong>Hutang</strong></a>.
+      Klik baris konsumen untuk melihat detail item.
     </p>
 
     <?php if (!$hutangGroup): ?>
-      <div class="empty" style="padding:24px 0">Tidak ada data hutang. 🎉</div>
+      <div class="empty-state">
+        <span class="emoji">🎉</span>
+        Tidak ada data hutang.
+      </div>
     <?php else: ?>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th style="width:30px"></th>
               <th>Nama Konsumen</th>
               <th class="text-center">Jml Item</th>
               <th class="text-right">Total Belanja</th>
               <th class="text-right">Sudah Dibayar</th>
               <th class="text-right">Sisa Hutang</th>
               <th class="text-center">Status</th>
-              <th class="text-center">Aksi</th>
             </tr>
           </thead>
           <tbody>
           <?php foreach ($hutangGroup as $h):
-            $sisa   = (float)$h['total_sisa'];
-            $lunas  = ($sisa <= 0);
+            $sisa    = (float)$h['total_sisa'];
+            $lunas   = ($sisa <= 0);
+            $details = $detailByKonsumen[$h['nama']] ?? [];
+            $rowId   = 'dash-hutang-' . md5($h['nama']);
           ?>
-            <tr <?= $lunas ? 'style="background:#f0fdf4"' : '' ?>>
-              <td class="strong"><?= e($h['nama']) ?></td>
+            <tr class="row-konsumen <?= $lunas ? 'row-lunas' : '' ?>"
+                data-target="<?= $rowId ?>">
+              <td class="text-center">
+                <span class="toggle-icon" id="icon-<?= $rowId ?>">▶</span>
+              </td>
+              <td class="strong">
+                <?= e($h['nama']) ?>
+                <small class="text-muted" style="font-weight:400">
+                  (<?= count($details) ?> item)
+                </small>
+              </td>
               <td class="text-center"><?= (int)$h['jml_item'] ?> produk</td>
               <td class="text-right"><?= rupiah($h['total_belanja']) ?></td>
               <td class="text-right text-green"><?= rupiah($h['total_dibayar']) ?></td>
@@ -244,11 +254,59 @@ require_once 'includes/header.php';
                   <span class="tag tag-red">BELUM LUNAS</span>
                 <?php endif; ?>
               </td>
-              <td class="text-center">
-                <a href="hutang.php?nama=<?= urlencode($h['nama']) ?>"
-                   class="btn <?= $lunas ? 'btn-outline' : 'btn-primary' ?> btn-sm">
-                  <?= $lunas ? '🔍 Lihat' : '💳 Bayar' ?>
-                </a>
+            </tr>
+
+            <tr class="row-detail" id="<?= $rowId ?>">
+              <td colspan="7">
+                <div class="detail-inner" id="inner-<?= $rowId ?>">
+                  <div class="detail-content">
+                    <div class="hutang-detail-wrap">
+                      <table style="margin:0">
+                        <thead>
+                          <tr>
+                            <th>Kode</th>
+                            <th>Produk</th>
+                            <th class="text-center">Qty</th>
+                            <th class="text-right">Harga</th>
+                            <th class="text-right">Total</th>
+                            <th class="text-right">Dibayar</th>
+                            <th class="text-right">Sisa</th>
+                            <th class="text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (!$details): ?>
+                          <tr><td colspan="8" class="empty-state">Tidak ada detail.</td></tr>
+                        <?php else: foreach ($details as $d):
+                          $subtotal  = (float)$d['harga'] * (int)$d['qty'];
+                          $dibayar   = (float)$d['dibayar'];
+                          $sisaItem  = (float)$d['sisa'];
+                          $isLunas   = ($sisaItem <= 0);
+                        ?>
+                          <tr <?= $isLunas ? 'style="background:#f0fdf4;opacity:.85"' : '' ?>>
+                            <td><span class="tag tag-gray"><?= e($d['kode_produk']) ?></span></td>
+                            <td><?= e($d['nama_produk']) ?></td>
+                            <td class="text-center"><?= (int)$d['qty'] ?> <?= e($d['satuan']) ?></td>
+                            <td class="text-right"><?= rupiah($d['harga']) ?></td>
+                            <td class="text-right"><?= rupiah($subtotal) ?></td>
+                            <td class="text-right text-green"><?= rupiah($dibayar) ?></td>
+                            <td class="text-right strong <?= $isLunas ? 'text-green' : 'text-danger' ?>">
+                              <?= $isLunas ? 'Rp 0' : rupiah($sisaItem) ?>
+                            </td>
+                            <td class="text-center">
+                              <?php if ($isLunas): ?>
+                                <span class="tag tag-green">✓ LUNAS</span>
+                              <?php else: ?>
+                                <span class="tag tag-red">BELUM</span>
+                              <?php endif; ?>
+                            </td>
+                          </tr>
+                        <?php endforeach; endif; ?>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -259,51 +317,59 @@ require_once 'includes/header.php';
   </div>
 </div>
 
-<div class="card">
-  <div class="card-head">
-    <h2>Transaksi Terbaru</h2>
-    <a href="transaksi.php" class="btn btn-outline btn-sm">Lihat Semua</a>
+<!-- ================= GRID BAWAH: TRANSAKSI + PRODUK LARIS ================= -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-head">
+      <h2>🧾 Transaksi Terbaru</h2>
+      <a href="transaksi.php" class="btn btn-outline btn-sm">Lihat Semua</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Kode</th><th>Kasir</th><th>Waktu</th><th class="text-right">Total</th></tr>
+        </thead>
+        <tbody>
+        <?php if (!$trxTerbaru): ?>
+          <tr><td colspan="4" class="empty-state">Belum ada transaksi.</td></tr>
+        <?php else: foreach ($trxTerbaru as $t): ?>
+          <tr>
+            <td><span class="trx-badge"><?= e($t['kode']) ?></span></td>
+            <td><?= e($t['kasir'] ?? '-') ?></td>
+            <td class="text-muted"><?= tanggalIndo($t['tanggal']) ?></td>
+            <td class="text-right strong"><?= rupiah($t['total']) ?></td>
+          </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+      </table>
+    </div>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Kode</th><th>Kasir</th><th>Waktu</th><th class="text-right">Total</th></tr>
-      </thead>
-      <tbody>
-      <?php if (!$trxTerbaru): ?>
-        <tr><td colspan="4" class="empty">Belum ada transaksi.</td></tr>
-      <?php else: foreach ($trxTerbaru as $t): ?>
-        <tr>
-          <td><span class="tag tag-green"><?= e($t['kode']) ?></span></td>
-          <td><?= e($t['kasir'] ?? '-') ?></td>
-          <td class="text-muted"><?= tanggalIndo($t['tanggal']) ?></td>
-          <td class="text-right strong"><?= rupiah($t['total']) ?></td>
-        </tr>
-      <?php endforeach; endif; ?>
-      </tbody>
-    </table>
-  </div>
-</div>
 
-<div class="card">
-  <div class="card-head"><h2>Produk Terlaris</h2></div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Produk</th><th class="text-center">Terjual</th><th class="text-right">Omzet</th></tr>
-      </thead>
-      <tbody>
-      <?php if (!$produkLaris): ?>
-        <tr><td colspan="3" class="empty">Belum ada penjualan.</td></tr>
-      <?php else: foreach ($produkLaris as $p): ?>
-        <tr>
-          <td class="strong"><?= e($p['nama']) ?></td>
-          <td class="text-center"><span class="tag tag-blue"><?= (int)$p['terjual'] ?></span></td>
-          <td class="text-right strong"><?= rupiah($p['omzet']) ?></td>
-        </tr>
-      <?php endforeach; endif; ?>
-      </tbody>
-    </table>
+  <div class="card">
+    <div class="card-head">
+      <h2>🔥 Produk Terlaris</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th style="width:40px">#</th><th>Produk</th><th class="text-center">Terjual</th><th class="text-right">Omzet</th></tr>
+        </thead>
+        <tbody>
+        <?php if (!$produkLaris): ?>
+          <tr><td colspan="4" class="empty-state">Belum ada penjualan.</td></tr>
+        <?php else: foreach ($produkLaris as $i => $p): ?>
+          <tr>
+            <td class="text-center">
+              <span class="rank-badge rank-<?= $i+1 ?>"><?= $i+1 ?></span>
+            </td>
+            <td class="strong"><?= e($p['nama']) ?></td>
+            <td class="text-center"><span class="tag tag-blue"><?= (int)$p['terjual'] ?></span></td>
+            <td class="text-right strong"><?= rupiah($p['omzet']) ?></td>
+          </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -312,12 +378,17 @@ require_once 'includes/header.php';
 <script>
   const rupiah = (n) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
-  // =====================================================
-  // 1. LINE CHART — Tren Penjualan 7 Hari
-  // =====================================================
-  const ctxPenjualan = document.getElementById('chartPenjualan');
-  if (ctxPenjualan) {
-    new Chart(ctxPenjualan, {
+  /* ============================================================
+     1. LINE CHART — Tren Penjualan 7 Hari
+     ============================================================ */
+  const canvasPenjualan = document.getElementById('chartPenjualan');
+  if (canvasPenjualan) {
+    const ctx = canvasPenjualan.getContext('2d');
+    const gradient = ctx.createLinearGradient(0, 0, 0, 340);
+    gradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+    gradient.addColorStop(1, 'rgba(16, 185, 129, 0.02)');
+
+    new Chart(ctx, {
       type: 'line',
       data: {
         labels: <?= json_encode($chartLabels) ?>,
@@ -325,30 +396,60 @@ require_once 'includes/header.php';
           label: 'Penjualan',
           data: <?= json_encode($chartData) ?>,
           borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.15)',
-          borderWidth: 2,
+          backgroundColor: gradient,
+          borderWidth: 2.5,
           fill: true,
-          tension: 0.35,
-          pointBackgroundColor: '#10b981',
-          pointRadius: 4
+          tension: 0.4,
+          pointBackgroundColor: '#fff',
+          pointBorderColor: '#10b981',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 7,
+          pointHoverBackgroundColor: '#10b981'
         }]
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: (ctx) => rupiah(ctx.parsed.y) } }
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 12,
+            cornerRadius: 8,
+            titleFont: { size: 12, weight: '600' },
+            bodyFont: { size: 13, weight: '700' },
+            displayColors: false,
+            callbacks: { label: (ctx) => rupiah(ctx.parsed.y) }
+          }
         },
         scales: {
-          y: { beginAtZero: true, ticks: { callback: (v) => rupiah(v) } }
+          y: {
+            beginAtZero: true,
+            ticks: {
+              color: '#94a3b8',
+              font: { size: 11 },
+              callback: (v) => {
+                if (v >= 1000000) return 'Rp ' + (v/1000000).toFixed(1) + 'jt';
+                if (v >= 1000)    return 'Rp ' + (v/1000).toFixed(0) + 'rb';
+                return 'Rp ' + v;
+              }
+            },
+            grid: { color: 'rgba(0,0,0,0.05)', drawBorder: false }
+          },
+          x: {
+            ticks: { color: '#94a3b8', font: { size: 11 } },
+            grid: { display: false }
+          }
         }
       }
     });
   }
 
-  // =====================================================
-  // 2. PLUGIN — Tampilkan Persen di Dalam Slice
-  // =====================================================
+  /* ============================================================
+     2. PLUGIN — Persen di Slice
+     ============================================================ */
   const persenPlugin = {
     id: 'persenPlugin',
     afterDatasetsDraw(chart) {
@@ -378,13 +479,14 @@ require_once 'includes/header.php';
     }
   };
 
-  // =====================================================
-  // 3. PIE CHART — Komposisi Pengeluaran per Kategori
-  // =====================================================
-  const ctxPie = document.getElementById('chartSimpanan');
-  if (ctxPie) {
-    let pieLabels = <?= json_encode($outLabels ?? []) ?>;
-    let pieData   = <?= json_encode($outData   ?? []) ?>;
+  /* ============================================================
+     3. DOUGHNUT — Pengeluaran per Kategori
+     ============================================================ */
+  const canvasPie = document.getElementById('chartPengeluaran');
+  if (canvasPie) {
+    const ctxPie = canvasPie.getContext('2d');
+    let pieLabels = <?= json_encode($pengeluaranLabels) ?>;
+    let pieData   = <?= json_encode($pengeluaranData) ?>;
 
     if (pieData.length === 0) {
       pieLabels = ['Belum ada pengeluaran'];
@@ -397,7 +499,7 @@ require_once 'includes/header.php';
     ];
 
     new Chart(ctxPie, {
-      type: 'pie',
+      type: 'doughnut',
       plugins: [persenPlugin],
       data: {
         labels: pieLabels,
@@ -407,12 +509,13 @@ require_once 'includes/header.php';
                            ? ['#e2e8f0'] : pieColors,
           borderColor: '#ffffff',
           borderWidth: 3,
-          hoverOffset: 8
+          hoverOffset: 10
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '58%',
         plugins: {
           legend: {
             position: 'bottom',
@@ -425,6 +528,9 @@ require_once 'includes/header.php';
             }
           },
           tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 12,
+            cornerRadius: 8,
             callbacks: {
               label: (ctx) => {
                 if (ctx.label === 'Belum ada pengeluaran') {
@@ -441,6 +547,5 @@ require_once 'includes/header.php';
     });
   }
 </script>
-<!-- ========== END SCRIPT CHART.JS ========== -->
 
 <?php require_once 'includes/footer.php'; ?>

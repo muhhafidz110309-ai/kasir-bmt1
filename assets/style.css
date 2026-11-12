@@ -852,15 +852,20 @@ input[type=file] { padding: 8px; cursor: pointer; }
   border: 1px solid #fecaca;
 }
 
-/* ------------------------------------------------------------
-   LOGIN
-   ------------------------------------------------------------ */
+/* ============================================================
+   LOGIN PAGE — RAPIH & BERSIH
+   ============================================================ */
 .login-page {
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 24px;
-  background: linear-gradient(135deg, var(--g800) 0%, var(--g900) 55%, #021a12 100%);
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(16, 185, 129, .08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(212, 175, 55, .06) 0%, transparent 50%),
+    radial-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
+    linear-gradient(135deg, #052e21 0%, #064e3b 55%, #021a12 100%);
+  background-size: auto, auto, 24px 24px, auto;
   position: relative;
   overflow: hidden;
 }
@@ -872,59 +877,243 @@ input[type=file] { padding: 8px; cursor: pointer; }
   border-radius: 50%;
   opacity: .09;
   background: var(--gold);
+  pointer-events: none;
 }
 .login-page::before { width: 420px; height: 420px; top: -140px; right: -120px; }
-.login-page::after { width: 300px; height: 300px; bottom: -120px; left: -90px; }
+.login-page::after  { width: 300px; height: 300px; bottom: -120px; left: -90px; }
 
 .login-card {
   width: 100%;
-  max-width: 400px;
-  background: #fff;
-  border-radius: var(--r-xl);
-  padding: 38px 34px;
-  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, .55);
+  max-width: 410px;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 40px 36px 34px;
+  box-shadow:
+    0 30px 70px -20px rgba(0, 0, 0, .55),
+    0 0 0 1px rgba(255, 255, 255, .05);
   position: relative;
   z-index: 2;
+  animation: loginCardIn .5s cubic-bezier(.22, 1, .36, 1) both;
 }
 
-.login-logo {
-  width: 66px;
-  height: 66px;
-  margin: 0 auto 16px;
-  border-radius: 18px;
+@keyframes loginCardIn {
+  from { opacity: 0; transform: translateY(20px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Garis emas di atas card */
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+
+/* ====== LOGO ====== */
+.brand-logo-wrap {
+  width: 96px;
+  height: 96px;
   display: grid;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--g700), var(--g500));
-  color: #ffffff;
-  box-shadow: 0 8px 20px -8px rgba(5, 150, 105, .7);
+  place-items: center;
+  margin: 0 auto 20px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%,
+      rgba(16, 185, 129, .10),
+      rgba(16, 185, 129, .04) 60%,
+      transparent 70%);
+  box-shadow:
+    0 0 0 1px rgba(212, 175, 55, .30),
+    0 0 0 6px rgba(212, 175, 55, .05),
+    inset 0 0 18px rgba(16, 185, 129, .12);
+  position: relative;
 }
-.login-logo svg { width: 34px; height: 34px; }
 
+.brand-logo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px dashed rgba(212, 175, 55, .30);
+  animation: spinSlow 26s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes spinSlow { to { transform: rotate(360deg); } }
+
+.brand-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  object-position: center;
+  display: block;
+  filter: drop-shadow(0 6px 14px rgba(16, 185, 129, .40));
+  transition: transform .3s ease;
+}
+
+.brand-logo-wrap:hover .brand-logo {
+  transform: scale(1.04);
+}
+
+/* ====== HEADING ====== */
 .login-card h2 {
   text-align: center;
   color: var(--g800);
-  font-size: 21px;
+  font-size: 22px;
+  font-weight: 800;
   margin-bottom: 4px;
+  letter-spacing: -.3px;
 }
+
 .login-card p.sub {
   text-align: center;
   color: var(--muted);
   font-size: 13px;
-  margin-bottom: 26px;
+  margin-bottom: 28px;
+  letter-spacing: .2px;
 }
-.login-card .form-group { margin-bottom: 14px; }
 
-.login-hint {
-  margin-top: 20px;
-  padding: 11px;
-  background: var(--g25);
-  border-radius: 9px;
-  font-size: 12px;
+/* ====== FORM ====== */
+.login-card .form-group {
+  margin-bottom: 16px;
+}
+
+.login-card .form-group label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+  display: block;
+  letter-spacing: .2px;
+}
+
+.input-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon > svg {
+  position: absolute;
+  left: 13px;
+  width: 18px;
+  height: 18px;
   color: var(--muted);
-  text-align: center;
-  border: 1px dashed var(--border);
+  pointer-events: none;
+  transition: color .18s ease;
 }
 
+.input-icon input {
+  width: 100%;
+  padding: 12px 14px 12px 42px;
+  border: 1.5px solid var(--border);
+  border-radius: 11px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--text);
+  transition: all .18s ease;
+}
+
+.input-icon input:focus {
+  outline: none;
+  border-color: var(--g500);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, .13);
+}
+
+.input-icon:focus-within > svg {
+  color: var(--g600);
+}
+
+/* Toggle password */
+.input-icon .toggle-pw {
+  position: absolute;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  transition: all .18s ease;
+  padding: 0;
+}
+
+.input-icon .toggle-pw:hover  { background: var(--g50); color: var(--g700); }
+.input-icon .toggle-pw:active { transform: scale(.94); }
+
+.input-icon .toggle-pw svg {
+  width: 18px;
+  height: 18px;
+  position: static;
+  pointer-events: auto;
+}
+
+.input-icon input[type=password],
+.input-icon input#password {
+  padding-right: 48px;
+}
+
+/* Tombol submit */
+.login-card .btn-primary {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 11px;
+  letter-spacing: .3px;
+  margin-top: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-card .btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .25), transparent);
+  transition: left .5s ease;
+}
+
+.login-card .btn-primary:hover::before { left: 100%; }
+
+/* Alert error */
+.login-card .alert-error {
+  margin: 0 0 18px;
+  padding: 11px 16px;
+  font-size: 12.5px;
+  border-radius: 10px;
+  animation: shakeIn .4s ease;
+}
+
+@keyframes shakeIn {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* ====== RESPONSIVE ====== */
+@media (max-width: 480px) {
+  .login-card {
+    padding: 32px 24px 28px;
+    border-radius: 20px;
+  }
+  .brand-logo-wrap { width: 84px; height: 84px; margin-bottom: 16px; }
+  .brand-logo { width: 62px; height: 62px; }
+  .login-card h2 { font-size: 20px; }
+  .login-card p.sub { font-size: 12px; margin-bottom: 24px; }
+}
 /* ------------------------------------------------------------
    POS (Kasir)
    ------------------------------------------------------------ */
@@ -2059,3 +2248,4 @@ input[type=file] { padding: 8px; cursor: pointer; }
     grid-template-columns: 1fr !important;
   }
 }
+
